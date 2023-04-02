@@ -7,3 +7,4 @@ edition = "2021"
 
 [dependencies]
 ffmpeg-next = "6.0.0"
+image = "0.24.6"

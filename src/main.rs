@@ -6,7 +6,7 @@ use ffmpeg::{codec, format, format::context::*, media::Type, software, util::fra
 fn main() -> Result<(), ffmpeg::Error> {
     ffmpeg::init().unwrap();
 
-    let file_name = "samples/Tractor_500kbps_x265.mp4";
+    let file_name = "samples/SampleVideo_1280x720_1mb.mp4";
     match format::input(&file_name) {
         Ok(mut input) => {
             print_metadata(&input);
@@ -36,6 +36,11 @@ fn thumbnail(context: &mut Input) -> Result<(), ffmpeg::Error> {
         software::scaling::Flags::BILINEAR,
     )?;
 
+    // Attempt to seek to 10% of the file
+    // Note that this does not always work (keyframes and stuff), so we give an upper bound to the seek, and decode the frames until we hit our timestamp
+    let seek_ts = input.start_time() + (input.duration() as f64 * 0.1) as i64;
+    context.seek(seek_ts, 0..seek_ts)?;
+
     let packets = context
         .packets()
         .filter(|(stream, _)| stream.index() == video_stream_index)
@@ -43,8 +48,9 @@ fn thumbnail(context: &mut Input) -> Result<(), ffmpeg::Error> {
 
     for packet in packets {
         decoder.send_packet(&packet)?;
+        let dts = packet.dts().unwrap_or(i64::MAX);
         let mut decoded = Video::empty();
-        if decoder.receive_frame(&mut decoded).is_ok() {
+        if decoder.receive_frame(&mut decoded).is_ok() && dts >= seek_ts {
             let mut frame = Video::empty();
             scaler.run(&decoded, &mut frame)?;
 
@@ -71,6 +77,9 @@ fn print_metadata(context: &Input) {
     }
 
     if let Some(stream) = context.streams().best(ffmpeg::media::Type::Video) {
-        println!("Best video stream index: {}", stream.index());
+        println!("best_stream: {}", stream.index());
+        println!("time_base: {}", stream.time_base());
+        println!("start_time: {}", stream.start_time());
+        println!("duration: {}", stream.duration());
     }
 }

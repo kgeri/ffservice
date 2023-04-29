@@ -7,15 +7,15 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug executable 'ffservice'",
+            "name": "Debug executable 'server'",
             "cargo": {
                 "args": [
                     "build",
-                    "--bin=ffservice",
+                    "--bin=server",
                     "--package=ffservice"
                 ],
                 "filter": {
-                    "name": "ffservice",
+                    "name": "server",
                     "kind": "bin"
                 }
             },
@@ -25,16 +25,16 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug unit tests in executable 'ffservice'",
+            "name": "Debug unit tests in executable 'server'",
             "cargo": {
                 "args": [
                     "test",
                     "--no-run",
-                    "--bin=ffservice",
+                    "--bin=server",
                     "--package=ffservice"
                 ],
                 "filter": {
-                    "name": "ffservice",
+                    "name": "server",
                     "kind": "bin"
                 }
             },

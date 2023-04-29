@@ -1,0 +1,26 @@
+syntax = "proto3";
+
+package video;
+
+service VideoService {
+    rpc Transcode (stream TranscodeRequest) returns (stream TranscodeResponse) {}
+}
+
+message TranscodeRequest {
+    string extension = 1;
+    int32 targetWidth = 2;
+    int32 targetHeight = 3;
+    bytes requestChunk = 4;
+}
+
+message VideoMetadata {
+    int32 width = 1;
+    int32 height = 2;
+    int32 durationSeconds = 3;
+}
+
+message TranscodeResponse {
+    VideoMetadata metadata = 1;
+    bytes thumbnail = 2;
+    bytes transcodedChunk = 3;
+}

@@ -1,5 +1,5 @@
 use std::{
-    io::{Read, Seek, Write},
+    io::{Seek, Write, BufReader, BufRead},
     pin::Pin,
 };
 use tempfile::NamedTempFile;
@@ -71,9 +71,7 @@ impl VideoService for VideoServiceImpl {
         // Writing the response stream
         // TODO use transcoded file
         temp_file.rewind()?;
-        let mut converted_file = temp_file;
-
-        let mut buf: Vec<u8> = Vec::with_capacity(CHUNK_SIZE);
+        let converted_file = temp_file;
 
         let output_stream = async_stream::try_stream! {
             yield TranscodeResponse {
@@ -86,12 +84,25 @@ impl VideoService for VideoServiceImpl {
                 transcoded_chunk: vec![],
             };
 
-            while let Ok(read_bytes) = converted_file.read_to_end(buf.as_mut()) {
-                yield TranscodeResponse {
-                    metadata: None,
-                    thumbnail: vec![],
-                    transcoded_chunk: buf[..read_bytes].to_vec(),
+            let mut buffer = BufReader::with_capacity(CHUNK_SIZE, converted_file);
+            loop {
+                let read_bytes = match buffer.fill_buf() {
+                    Ok(buf) => {
+                        yield TranscodeResponse {
+                            metadata: None,
+                            thumbnail: vec![],
+                            transcoded_chunk: buf.to_vec(),
+                        };
+                        buf.len()
+                    },
+                    Err(error) => panic!("error"), // TODO
                 };
+
+                if read_bytes == 0 {
+                    break; //EOF
+                }
+
+                buffer.consume(read_bytes);
             }
         };
 

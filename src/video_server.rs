@@ -1,21 +1,31 @@
+use futures_core::Future;
 use std::{
-    io::{Seek, Write, BufReader, BufRead},
+    io::{BufRead, BufReader, Seek, Write},
+    net::SocketAddr,
     pin::Pin,
 };
 use tempfile::NamedTempFile;
 use tokio_stream::StreamExt;
 
-use tonic::{Request, Response, Status, Streaming};
+use tonic::{transport::Server, Request, Response, Status, Streaming};
 use video::{video_service_server::VideoService, TranscodeRequest, TranscodeResponse};
 
-use self::video::VideoMetadata;
+use self::video::{video_service_server::VideoServiceServer, VideoMetadata};
 
 pub mod video {
     tonic::include_proto!("video");
 }
 
+pub fn start_server(addr: SocketAddr) -> impl Future<Output = Result<(), tonic::transport::Error>> {
+    let service = VideoServiceImpl::default();
+
+    Server::builder()
+        .add_service(VideoServiceServer::new(service))
+        .serve(addr)
+}
+
 #[derive(Debug, Default)]
-pub struct VideoServiceImpl {}
+struct VideoServiceImpl {}
 
 const CHUNK_SIZE: usize = 1024 * 1024;
 

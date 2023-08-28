@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use cucumber::{given, then, when, World};
+use ffservice::video_server::start_server;
 use tokio::time::sleep;
 
 #[derive(Debug, Default, World)]
@@ -27,5 +28,9 @@ async fn then_a_downscaled_mp4_is_returned(_world: &mut FFServiceWorld) {
 
 #[tokio::main]
 async fn main() {
+    let addr = "0.0.0.0:2001".parse().unwrap();
+
+    tokio::spawn(start_server(addr));
+
     FFServiceWorld::run("tests/features").await;
 }

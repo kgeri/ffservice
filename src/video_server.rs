@@ -10,6 +10,8 @@ use tokio_stream::StreamExt;
 use tonic::{transport::Server, Request, Response, Status, Streaming};
 use video::{video_service_server::VideoService, TranscodeRequest, TranscodeResponse};
 
+use crate::thumbnailer;
+
 use self::video::{video_service_server::VideoServiceServer, VideoMetadata};
 
 pub mod video {
@@ -41,8 +43,8 @@ impl VideoService for VideoServiceImpl {
         request: Request<Streaming<TranscodeRequest>>,
     ) -> Result<Response<Self::TranscodeStream>, Status> {
         let mut size: i32 = 0;
-        let mut target_width = 0;
-        let mut target_height = 0;
+        let mut target_width: u32 = 0;
+        let mut target_height: u32 = 0;
 
         // Reading the request stream and saving it into a temporary file
         let mut stream = request.into_inner();
@@ -57,8 +59,8 @@ impl VideoService for VideoServiceImpl {
                 temp_file_option = Some(temp_file);
             }
             if tr.target_width > 0 && tr.target_height > 0 {
-                target_width = tr.target_width;
-                target_height = tr.target_height;
+                target_width = tr.target_width as u32;
+                target_height = tr.target_height as u32;
             }
 
             let temp_file = temp_file_option.as_mut().ok_or(Status::invalid_argument(
@@ -73,8 +75,10 @@ impl VideoService for VideoServiceImpl {
             "extension must be specified in the first TranscodeRequest",
         ))?;
 
-        // TODO Extracting metadata
-        let duration_seconds = 0;
+        // Extracting thumbnail
+        let file_path = temp_file.path();
+        let thumbnailer_result = thumbnailer::get_thumbnail(file_path, target_width, target_height)
+            .map_err(|err| Status::invalid_argument(format!("failed to get thumbnail {err}")))?; // TODO no need to fail on this, transcoding might still work?
 
         // TODO Transcoding
 
@@ -86,11 +90,11 @@ impl VideoService for VideoServiceImpl {
         let output_stream = async_stream::try_stream! {
             yield TranscodeResponse {
                 metadata: Some(VideoMetadata {
-                    width: target_width,
-                    height: target_height,
-                    duration_seconds: duration_seconds,
+                    width: thumbnailer_result.width as i32,
+                    height: thumbnailer_result.height as i32,
+                    duration_seconds: thumbnailer_result.duration_seconds as i32,
                 }),
-                thumbnail: vec![], // TODO Thumbnailing
+                thumbnail: thumbnailer_result.thumbnail.to_vec(),
                 transcoded_chunk: vec![],
             };
 
@@ -105,7 +109,7 @@ impl VideoService for VideoServiceImpl {
                         };
                         buf.len()
                     },
-                    Err(error) => panic!("error"), // TODO
+                    Err(error) => panic!("failed to fill_buf while streaming response: {error}"),
                 };
 
                 if read_bytes == 0 {

@@ -1,4 +1,4 @@
-use cucumber::{given, then, when, World};
+use cucumber::{given, then, when, writer, World};
 use ffservice::{
     video_client::{
         video::{video_service_client::VideoServiceClient, VideoMetadata},
@@ -30,11 +30,12 @@ async fn when_a_transcoderequest_with_is_received(world: &mut FFServiceWorld, fi
     world.last_metadata = Some(metadata);
 }
 
-#[then("a downscaled mp4 is returned")]
-async fn then_a_downscaled_mp4_is_returned(world: &mut FFServiceWorld) {
+#[then(regex = r"^the metadata has width=(.*?) height=(.*?) duration=(.*?)$")]
+async fn then_the_metadata_has(world: &mut FFServiceWorld, width: i32, height: i32, duration: i32) {
     let m = world.last_metadata.as_ref().unwrap();
-    assert_eq!(m.width, 1280);
-    assert_eq!(m.height, 720);
+    assert_eq!(width, m.width);
+    assert_eq!(height, m.height);
+    assert_eq!(duration, m.duration_seconds);
 }
 
 #[tokio::main]
@@ -43,5 +44,8 @@ async fn main() {
 
     tokio::spawn(start_server(addr));
 
-    FFServiceWorld::run("tests/features").await;
+    FFServiceWorld::cucumber()
+        .with_writer(writer::Libtest::or_basic())
+        .run("tests/features")
+        .await;
 }

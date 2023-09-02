@@ -43,13 +43,14 @@
         {
             "type": "lldb",
             "request": "launch",
-            "name": "Debug unit tests in executable 'server'",
+            "name": "Debug integration tests",
             "cargo": {
                 "args": [
                     "test",
-                    "--no-run",
-                    "--bin=server",
-                    "--package=ffservice"
+                    "--test=integration",
+                    "--",
+                    "--concurrency=1",
+                    "--format=json",
                 ],
                 "filter": {
                     "name": "server",

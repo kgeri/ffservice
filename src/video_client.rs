@@ -58,7 +58,7 @@ impl VideoClient {
                         };
                         buf.len()
                     },
-                    Err(error) => panic!("error"), // TODO
+                    Err(error) => panic!("failed to fill_buf while streaming request: {error}"),
                 };
 
                 if read_bytes == 0 {
@@ -72,7 +72,11 @@ impl VideoClient {
         let response = self.client.transcode(Request::new(outbound)).await?;
         let mut inbound = response.into_inner();
 
-        let mut metadata: VideoMetadata = VideoMetadata { width: 0, height: 0, duration_seconds: 0 };
+        let mut metadata: VideoMetadata = VideoMetadata {
+            width: 0,
+            height: 0,
+            duration_seconds: 0,
+        };
         let mut output_file = File::create(output_filename)?;
         let mut thumbnail_file = File::create(format!("{output_filename}.jpg"))?;
         while let Some(tr) = inbound.message().await? {

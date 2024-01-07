@@ -6,9 +6,10 @@ use std::ffi::CString;
 
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 
-pub fn open_video(file_name: &str) {
-    let file_name_cstr = CString::new(file_name).unwrap();
+pub fn transcode(input_file_name: &str, output_file_name: &str) {
+    let if_cstr = CString::new(input_file_name).unwrap();
+    let of_cstr = CString::new(output_file_name).unwrap();
     unsafe {
-        ffmpeg_open(file_name_cstr.as_ptr());
+        ffmpeg_transcode(if_cstr.as_ptr(), of_cstr.as_ptr(), 0);
     }
 }

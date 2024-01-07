@@ -1,8 +1,8 @@
 use anyhow::Result;
-use lib_ffmpeg::open_video;
+use lib_ffmpeg::transcode;
 
 fn main() -> Result<()> {
-    open_video("samples/Tractor_500kbps_x2652.mp4");
+    transcode("samples/Tractor_500kbps_x265.mp4", "target/transcoded.mp4");
 
     Ok(())
 }

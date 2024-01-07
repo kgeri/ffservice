@@ -1,5 +1,6 @@
 {
     "files.associations": {
-        "avformat.h": "c"
+        "avformat.h": "c",
+        "random": "c"
     }
 }

@@ -40,6 +40,8 @@ static void fc_free(FilterContext *fc)
 
 typedef struct TranscodeContext
 {
+    const int target_width;
+    const int target_height;
     AVFormatContext *ifmt_ctx;
     AVFormatContext *ofmt_ctx;
     StreamContext *stream_ctxs;
@@ -222,8 +224,8 @@ static int open_output_file(const char *output_file_name, TranscodeContext *tc)
 
             if (codec_type == AVMEDIA_TYPE_VIDEO)
             {
-                enc_ctx->width = dec_ctx->width;
-                enc_ctx->height = dec_ctx->height;
+                enc_ctx->width = tc->target_width ? tc->target_width : dec_ctx->width;
+                enc_ctx->height = tc->target_height ? tc->target_height : dec_ctx->height;
                 enc_ctx->sample_aspect_ratio = dec_ctx->sample_aspect_ratio;
                 enc_ctx->pix_fmt = encoder->pix_fmts[0];           // Take first format from list of supported formats
                 enc_ctx->time_base = av_inv_q(dec_ctx->framerate); // Video time_base can be set to whatever is handy and supported by encoder
@@ -302,12 +304,11 @@ static int open_output_file(const char *output_file_name, TranscodeContext *tc)
  *
  * @return 0 on success, a negative AVERROR on failure.
  */
-static int init_video_filter(FilterContext *filter, StreamContext *stream, const char *filter_spec)
+static int init_video_filter(FilterContext *fc, StreamContext *sc, char *filter_spec)
 {
-    AVCodecContext *dc = stream->dec_ctx;
-    AVCodecContext *ec = stream->enc_ctx;
-    char args[512];
     int ret = 0;
+    AVCodecContext *dc = sc->dec_ctx;
+    AVCodecContext *ec = sc->enc_ctx;
     const AVFilter *buffersrc = NULL;
     const AVFilter *buffersink = NULL;
     AVFilterContext *buffersrc_ctx = NULL;
@@ -322,7 +323,7 @@ static int init_video_filter(FilterContext *filter, StreamContext *stream, const
         ret = AVERROR(ENOMEM);
         goto end;
     }
-    filter->filter_graph = filter_graph;
+    fc->filter_graph = filter_graph;
 
     buffersrc = avfilter_get_by_name("buffer");
     buffersink = avfilter_get_by_name("buffersink");
@@ -333,26 +334,29 @@ static int init_video_filter(FilterContext *filter, StreamContext *stream, const
         goto end;
     }
 
-    // TODO resize here?
-    snprintf(args, sizeof(args), "video_size=%dx%d:pix_fmt=%d:time_base=%d/%d:pixel_aspect=%d/%d",
+    // Create buffersrc (input)
+    char args[512];
+    snprintf(args, sizeof(args),
+             "video_size=%dx%d:pix_fmt=%d:time_base=%d/%d:pixel_aspect=%d/%d",
              dc->width, dc->height, dc->pix_fmt,
              dc->pkt_timebase.num, dc->pkt_timebase.den,
              dc->sample_aspect_ratio.num, dc->sample_aspect_ratio.den);
-
     if ((ret = avfilter_graph_create_filter(&buffersrc_ctx, buffersrc, "in", args, NULL, filter_graph)) < 0)
     {
         av_log(NULL, AV_LOG_ERROR, "Cannot create video buffer source\n");
         goto end;
     }
-    filter->buffersrc_ctx = buffersrc_ctx;
+    fc->buffersrc_ctx = buffersrc_ctx;
 
+    // Create buffersink (output)
     if ((ret = avfilter_graph_create_filter(&buffersink_ctx, buffersink, "out", NULL, NULL, filter_graph)) < 0)
     {
         av_log(NULL, AV_LOG_ERROR, "Cannot create video buffer sink\n");
         goto end;
     }
-    filter->buffersink_ctx = buffersink_ctx;
+    fc->buffersink_ctx = buffersink_ctx;
 
+    // Configure pixel format for output
     if ((ret = av_opt_set_bin(buffersink_ctx, "pix_fmts", (uint8_t *)&ec->pix_fmt, sizeof(ec->pix_fmt), AV_OPT_SEARCH_CHILDREN)) < 0)
     {
         av_log(NULL, AV_LOG_ERROR, "Cannot set output pixel format\n");
@@ -376,12 +380,14 @@ static int init_video_filter(FilterContext *filter, StreamContext *stream, const
         goto end;
     }
 
+    // Parse an arbitrarily complex filter chain from `filter_spec`
     if ((ret = avfilter_graph_parse_ptr(filter_graph, filter_spec, &inputs, &outputs, NULL)) < 0)
     {
         av_log(NULL, AV_LOG_ERROR, "Failed to parse filter graph\n");
         goto end;
     }
 
+    // Configure the filter graph
     if ((ret = avfilter_graph_config(filter_graph, NULL)) < 0)
     {
         av_log(NULL, AV_LOG_ERROR, "Failed to configure filter graph\n");
@@ -427,7 +433,11 @@ static int init_filters(TranscodeContext *tc)
         enum AVMediaType codec_type = sc->dec_ctx->codec_type;
         if (codec_type == AVMEDIA_TYPE_VIDEO)
         {
-            if ((ret = init_video_filter(fc, sc, "null")))
+            char filter_spec[128];
+            snprintf(filter_spec, sizeof(filter_spec),
+                     "scale='min(%d,iw)':'min(%d,ih)'",
+                     tc->target_width, tc->target_height);
+            if ((ret = init_video_filter(fc, sc, filter_spec)))
             {
                 av_log(NULL, AV_LOG_ERROR, "Failed to init video filter (%d)\n", ret);
                 return ret;
@@ -617,10 +627,10 @@ static int transcode_packet(TranscodeContext *tc, unsigned int stream_index, AVP
     return 0;
 }
 
-void ffmpeg_transcode(const char *input_file_name, const char *output_file_name, int debug)
+void ffmpeg_transcode(const char *input_file_name, const char *output_file_name, int target_width, int target_height, int debug)
 {
     int ret;
-    TranscodeContext tc = {NULL, NULL, NULL, 0, NULL, 0, NULL};
+    TranscodeContext tc = {target_width, target_height, NULL, NULL, NULL, 0, NULL, 0, NULL};
 
     if (debug)
         av_log_set_level(AV_LOG_DEBUG);

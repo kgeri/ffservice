@@ -6,10 +6,21 @@ use std::ffi::CString;
 
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 
-pub fn transcode(input_file_name: &str, output_file_name: &str) {
+pub fn transcode(
+    input_file_name: &str,
+    output_file_name: &str,
+    target_width: i32,
+    target_height: i32,
+) {
     let if_cstr = CString::new(input_file_name).unwrap();
     let of_cstr = CString::new(output_file_name).unwrap();
     unsafe {
-        ffmpeg_transcode(if_cstr.as_ptr(), of_cstr.as_ptr(), 0);
+        ffmpeg_transcode(
+            if_cstr.as_ptr(),
+            of_cstr.as_ptr(),
+            target_width,
+            target_height,
+            0,
+        );
     }
 }

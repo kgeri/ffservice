@@ -295,14 +295,14 @@ static int open_output_file(const char *output_file_name, TranscodeContext *tc)
 }
 
 /**
- * Allocates and configures one video or audio filter.
+ * Allocates and configures a video filter chain.
  *
  * @param filter the filter to configure. Must be freed with `fc_free` after use.
  * @param stream a StreamContext already initialized by `open_input_file`.
  *
  * @return 0 on success, a negative AVERROR on failure.
  */
-static int init_filter(FilterContext *filter, StreamContext *stream, const char *filter_spec)
+static int init_video_filter(FilterContext *filter, StreamContext *stream, const char *filter_spec)
 {
     AVCodecContext *dc = stream->dec_ctx;
     AVCodecContext *ec = stream->enc_ctx;
@@ -324,100 +324,38 @@ static int init_filter(FilterContext *filter, StreamContext *stream, const char 
     }
     filter->filter_graph = filter_graph;
 
-    if (dc->codec_type == AVMEDIA_TYPE_VIDEO)
+    buffersrc = avfilter_get_by_name("buffer");
+    buffersink = avfilter_get_by_name("buffersink");
+    if (!buffersrc || !buffersink)
     {
-        buffersrc = avfilter_get_by_name("buffer");
-        buffersink = avfilter_get_by_name("buffersink");
-        if (!buffersrc || !buffersink)
-        {
-            av_log(NULL, AV_LOG_ERROR, "Filtering source or sink element not found\n");
-            ret = AVERROR_UNKNOWN;
-            goto end;
-        }
-
-        // TODO resize here?
-        snprintf(args, sizeof(args), "video_size=%dx%d:pix_fmt=%d:time_base=%d/%d:pixel_aspect=%d/%d",
-                 dc->width, dc->height, dc->pix_fmt,
-                 dc->pkt_timebase.num, dc->pkt_timebase.den,
-                 dc->sample_aspect_ratio.num, dc->sample_aspect_ratio.den);
-
-        if ((ret = avfilter_graph_create_filter(&buffersrc_ctx, buffersrc, "in", args, NULL, filter_graph)) < 0)
-        {
-            av_log(NULL, AV_LOG_ERROR, "Cannot create video buffer source\n");
-            goto end;
-        }
-        filter->buffersrc_ctx = buffersrc_ctx;
-
-        if ((ret = avfilter_graph_create_filter(&buffersink_ctx, buffersink, "out", NULL, NULL, filter_graph)) < 0)
-        {
-            av_log(NULL, AV_LOG_ERROR, "Cannot create video buffer sink\n");
-            goto end;
-        }
-        filter->buffersink_ctx = buffersink_ctx;
-
-        if ((ret = av_opt_set_bin(buffersink_ctx, "pix_fmts", (uint8_t *)&ec->pix_fmt, sizeof(ec->pix_fmt), AV_OPT_SEARCH_CHILDREN)) < 0)
-        {
-            av_log(NULL, AV_LOG_ERROR, "Cannot set output pixel format\n");
-            goto end;
-        }
-    }
-    else if (dc->codec_type == AVMEDIA_TYPE_AUDIO)
-    {
-        char buf[64];
-        buffersrc = avfilter_get_by_name("abuffer");
-        buffersink = avfilter_get_by_name("abuffersink");
-        if (!buffersrc || !buffersink)
-        {
-            av_log(NULL, AV_LOG_ERROR, "Filtering source or sink element not found\n");
-            ret = AVERROR_UNKNOWN;
-            goto end;
-        }
-
-        if (dc->ch_layout.order == AV_CHANNEL_ORDER_UNSPEC)
-            av_channel_layout_default(&dc->ch_layout, dc->ch_layout.nb_channels);
-        av_channel_layout_describe(&dc->ch_layout, buf, sizeof(buf));
-
-        snprintf(args, sizeof(args), "time_base=%d/%d:sample_rate=%d:sample_fmt=%s:channel_layout=%s",
-                 dc->pkt_timebase.num, dc->pkt_timebase.den, dc->sample_rate,
-                 av_get_sample_fmt_name(dc->sample_fmt), buf);
-
-        if ((ret = avfilter_graph_create_filter(&buffersrc_ctx, buffersrc, "in", args, NULL, filter_graph)) < 0)
-        {
-            av_log(NULL, AV_LOG_ERROR, "Cannot create audio buffer source\n");
-            goto end;
-        }
-        filter->buffersrc_ctx = buffersrc_ctx;
-
-        if ((ret = avfilter_graph_create_filter(&buffersink_ctx, buffersink, "out", NULL, NULL, filter_graph)) < 0)
-        {
-            av_log(NULL, AV_LOG_ERROR, "Cannot create audio buffer sink\n");
-            goto end;
-        }
-        filter->buffersink_ctx = buffersink_ctx;
-
-        if ((ret = av_opt_set_bin(buffersink_ctx, "sample_fmts", (uint8_t *)&ec->sample_fmt, sizeof(ec->sample_fmt), AV_OPT_SEARCH_CHILDREN)) < 0)
-        {
-            av_log(NULL, AV_LOG_ERROR, "Cannot set output sample format\n");
-            goto end;
-        }
-
-        av_channel_layout_describe(&ec->ch_layout, buf, sizeof(buf));
-        if ((ret = av_opt_set(buffersink_ctx, "ch_layouts", buf, AV_OPT_SEARCH_CHILDREN)) < 0)
-        {
-            av_log(NULL, AV_LOG_ERROR, "Cannot set output channel layout\n");
-            goto end;
-        }
-
-        if ((ret = av_opt_set_bin(buffersink_ctx, "sample_rates", (uint8_t *)&ec->sample_rate, sizeof(ec->sample_rate), AV_OPT_SEARCH_CHILDREN)) < 0)
-        {
-            av_log(NULL, AV_LOG_ERROR, "Cannot set output sample rate\n");
-            goto end;
-        }
-    }
-    else
-    {
-        av_log(NULL, AV_LOG_ERROR, "Filtering not supported for codec type: %d\n", dc->codec_type);
+        av_log(NULL, AV_LOG_ERROR, "Filtering source or sink element not found\n");
         ret = AVERROR_UNKNOWN;
+        goto end;
+    }
+
+    // TODO resize here?
+    snprintf(args, sizeof(args), "video_size=%dx%d:pix_fmt=%d:time_base=%d/%d:pixel_aspect=%d/%d",
+             dc->width, dc->height, dc->pix_fmt,
+             dc->pkt_timebase.num, dc->pkt_timebase.den,
+             dc->sample_aspect_ratio.num, dc->sample_aspect_ratio.den);
+
+    if ((ret = avfilter_graph_create_filter(&buffersrc_ctx, buffersrc, "in", args, NULL, filter_graph)) < 0)
+    {
+        av_log(NULL, AV_LOG_ERROR, "Cannot create video buffer source\n");
+        goto end;
+    }
+    filter->buffersrc_ctx = buffersrc_ctx;
+
+    if ((ret = avfilter_graph_create_filter(&buffersink_ctx, buffersink, "out", NULL, NULL, filter_graph)) < 0)
+    {
+        av_log(NULL, AV_LOG_ERROR, "Cannot create video buffer sink\n");
+        goto end;
+    }
+    filter->buffersink_ctx = buffersink_ctx;
+
+    if ((ret = av_opt_set_bin(buffersink_ctx, "pix_fmts", (uint8_t *)&ec->pix_fmt, sizeof(ec->pix_fmt), AV_OPT_SEARCH_CHILDREN)) < 0)
+    {
+        av_log(NULL, AV_LOG_ERROR, "Cannot set output pixel format\n");
         goto end;
     }
 
@@ -480,34 +418,37 @@ static int init_filters(TranscodeContext *tc)
 
     for (unsigned int i = 0; i < nb_filter_ctxs; i++)
     {
-        StreamContext *s = &tc->stream_ctxs[i];
-        FilterContext *f = &filter_ctxs[i];
-        f->buffersrc_ctx = NULL;
-        f->buffersink_ctx = NULL;
-        f->filter_graph = NULL;
+        StreamContext *sc = &tc->stream_ctxs[i];
+        FilterContext *fc = &filter_ctxs[i];
+        fc->buffersrc_ctx = NULL;
+        fc->buffersink_ctx = NULL;
+        fc->filter_graph = NULL;
 
-        enum AVMediaType codec_type = s->dec_ctx->codec_type;
-        if (codec_type != AVMEDIA_TYPE_AUDIO && codec_type != AVMEDIA_TYPE_VIDEO)
-            continue;
-
-        const char *filter_spec = codec_type == AVMEDIA_TYPE_AUDIO ? "anull" : "null";
-        if ((ret = init_filter(f, s, filter_spec)))
+        enum AVMediaType codec_type = sc->dec_ctx->codec_type;
+        if (codec_type == AVMEDIA_TYPE_VIDEO)
         {
-            av_log(NULL, AV_LOG_ERROR, "Failed to init filter (%d)\n", ret);
-            return ret;
+            if ((ret = init_video_filter(fc, sc, "null")))
+            {
+                av_log(NULL, AV_LOG_ERROR, "Failed to init video filter (%d)\n", ret);
+                return ret;
+            }
+        }
+        else
+        {
+            continue;
         }
 
-        f->enc_pkt = av_packet_alloc();
-        if (!f->enc_pkt)
+        fc->enc_pkt = av_packet_alloc();
+        if (!fc->enc_pkt)
         {
             av_log(NULL, AV_LOG_ERROR, "Failed to allocate packet for filter (%d)\n", ret);
             return AVERROR(ENOMEM);
         }
 
-        f->filtered_frame = av_frame_alloc();
-        if (!f->filtered_frame)
+        fc->filtered_frame = av_frame_alloc();
+        if (!fc->filtered_frame)
         {
-            av_log(NULL, AV_LOG_ERROR, "Failed to allocate frame for filter: %s\n", filter_spec);
+            av_log(NULL, AV_LOG_ERROR, "Failed to allocate frame for filter (%d)\n", ret);
             return AVERROR(ENOMEM);
         }
     }
